@@ -1,17 +1,20 @@
-name: Watch8 v3.7 - Build Phone and Watch APKs
+
+name: Watch8 v3.8 - Build Phone and Watch APKs
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'Watch8_ScorePath_RELIABLE_v3_7_OneUpload.zip'
+      - 'Watch8_ScorePath_ROUND_v3_8_OneUpload.zip'
       - '.github/workflows/build-apk.yml'
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+
     permissions:
       contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,50 +30,72 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      # No android-actions/setup-android: its v3 step tries to install the
-      # obsolete 'tools' SDK package, which is no longer available.
-      - name: Check preinstalled Android SDK 35
+      - name: Check Android SDK 35
         shell: bash
         run: |
           set -euo pipefail
+
           SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+
           test -d "$SDK_DIR"
+
           echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+
           if [ ! -f "$SDK_DIR/platforms/android-35/android.jar" ] || [ ! -x "$SDK_DIR/build-tools/35.0.0/aapt2" ]; then
+
             SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
+
             if [ ! -x "$SDKMANAGER" ]; then
               SDKMANAGER="$(find "$SDK_DIR/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n1)"
             fi
+
             test -x "$SDKMANAGER"
+
             (yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null) || true
+
             "$SDKMANAGER" --sdk_root="$SDK_DIR" --install 'platforms;android-35' 'build-tools;35.0.0'
           fi
+
           test -f "$SDK_DIR/platforms/android-35/android.jar"
           test -x "$SDK_DIR/build-tools/35.0.0/aapt2"
-          echo "SDK 35 is ready at $SDK_DIR"
 
-      - name: Unpack v3.7 source
+          echo "Android SDK 35 ready"
+
+      - name: Unpack Watch8 v3.8 source
         shell: bash
         run: |
           set -euo pipefail
-          test -s Watch8_ScorePath_RELIABLE_v3_7_OneUpload.zip
-          unzip -oq Watch8_ScorePath_RELIABLE_v3_7_OneUpload.zip -x '.github/*'
+
+          test -s Watch8_ScorePath_ROUND_v3_8_OneUpload.zip
+
+          unzip -oq Watch8_ScorePath_ROUND_v3_8_OneUpload.zip -x '.github/*'
+
           test -f app/build.gradle
           test -f wear/build.gradle
           test -f signing/watch8-development.jks
+
+          echo "Watch8 v3.8 source unpacked"
 
       - name: Run JavaScript regression tests
         shell: bash
         run: |
           set -euo pipefail
-          for testfile in tests/*.test.js; do node "$testfile"; done
 
-      - name: Build mobile and watch apps
+          for testfile in tests/*.test.js; do
+            node "$testfile"
+          done
+
+      - name: Build phone and watch APKs
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleDebug :wear:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee gradle-build.log
+
+          gradle :app:assembleDebug :wear:assembleDebug \
+            --no-daemon \
+            --stacktrace \
+            --console=plain \
+            2>&1 | tee gradle-build.log
 
       - name: Show error summary
         if: failure()
@@ -85,20 +110,20 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Watch8-v3.7-build-error-log
+          name: Watch8-v3.8-build-error-log
           path: gradle-build.log
           if-no-files-found: ignore
 
       - name: Upload phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: Watch8-v3.7-PHONE
+          name: Watch8-v3.8-PHONE
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - name: Upload watch APK
         uses: actions/upload-artifact@v4
         with:
-          name: Watch8-v3.7-WEAR
+          name: Watch8-v3.8-WEAR
           path: wear/build/outputs/apk/debug/wear-debug.apk
           if-no-files-found: error
