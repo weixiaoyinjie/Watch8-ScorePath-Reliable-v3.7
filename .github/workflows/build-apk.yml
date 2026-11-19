@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -27,10 +27,28 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Install Android SDK 35
-        uses: android-actions/setup-android@v3
-      - name: Install Android platform and build tools
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      # No android-actions/setup-android: its v3 step tries to install the
+      # obsolete 'tools' SDK package, which is no longer available.
+      - name: Check preinstalled Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_DIR"
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          if [ ! -f "$SDK_DIR/platforms/android-35/android.jar" ] || [ ! -x "$SDK_DIR/build-tools/35.0.0/aapt2" ]; then
+            SDKMANAGER="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
+            if [ ! -x "$SDKMANAGER" ]; then
+              SDKMANAGER="$(find "$SDK_DIR/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n1)"
+            fi
+            test -x "$SDKMANAGER"
+            (yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null) || true
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+          test -f "$SDK_DIR/platforms/android-35/android.jar"
+          test -x "$SDK_DIR/build-tools/35.0.0/aapt2"
+          echo "SDK 35 is ready at $SDK_DIR"
 
       - name: Unpack v3.7 source
         shell: bash
@@ -53,6 +71,15 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:assembleDebug :wear:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee gradle-build.log
+
+      - name: Show error summary
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f gradle-build.log ]; then
+            grep -n -E 'error:|FAILURE:|What went wrong:|Execution failed|cannot find symbol' gradle-build.log | tail -60 || true
+            tail -80 gradle-build.log
+          fi
 
       - name: Upload build log on failure
         if: failure()
