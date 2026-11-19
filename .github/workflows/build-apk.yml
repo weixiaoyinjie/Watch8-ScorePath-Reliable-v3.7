@@ -1,0 +1,77 @@
+name: Watch8 v3.7 - Build Phone and Watch APKs
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Watch8_ScorePath_RELIABLE_v3_7_OneUpload.zip'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Install Android SDK 35
+        uses: android-actions/setup-android@v3
+      - name: Install Android platform and build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Unpack v3.7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Watch8_ScorePath_RELIABLE_v3_7_OneUpload.zip
+          unzip -oq Watch8_ScorePath_RELIABLE_v3_7_OneUpload.zip -x '.github/*'
+          test -f app/build.gradle
+          test -f wear/build.gradle
+          test -f signing/watch8-development.jks
+
+      - name: Run JavaScript regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for testfile in tests/*.test.js; do node "$testfile"; done
+
+      - name: Build mobile and watch apps
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug :wear:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee gradle-build.log
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watch8-v3.7-build-error-log
+          path: gradle-build.log
+          if-no-files-found: ignore
+
+      - name: Upload phone APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watch8-v3.7-PHONE
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload watch APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watch8-v3.7-WEAR
+          path: wear/build/outputs/apk/debug/wear-debug.apk
+          if-no-files-found: error
